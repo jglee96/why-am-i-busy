@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { Clock, ArrowLeft, Loader2 } from "lucide-react";
-import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/utils/supabase/client";
 import { decryptData } from "@/utils/encryption";

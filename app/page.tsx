@@ -137,7 +137,7 @@ export default function Home() {
                                 <div className="text-sm text-muted-foreground mb-1">
                                   작업 목록:
                                 </div>
-                                {session.tasks.map((task, index) => (
+                                {session.tasks.map((task) => (
                                   <div
                                     key={task.id}
                                     className="pl-4 border-l-2 border-muted py-1"

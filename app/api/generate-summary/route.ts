@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
 
     // Format tasks for the prompt
     const taskSummaries = tasks
-      .map((task: any) => {
+      .map((task: { startTime: string; endTime: string; content: string }) => {
         const startTime = new Date(task.startTime).toLocaleTimeString("ko-KR");
         const endTime = task.endTime
           ? new Date(task.endTime).toLocaleTimeString("ko-KR")
