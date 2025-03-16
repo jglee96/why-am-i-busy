@@ -10,8 +10,6 @@ import { decryptData } from "@/utils/encryption";
 import type { WorkSession, Task } from "@/types/work-session";
 import { formatDateTime, formatTime, formatDuration } from "@/utils/date-utils";
 import { ArrowLeft, Loader2, CheckCircle } from "lucide-react";
-import { generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
 
 export default function SessionReviewPage() {
   const router = useRouter();
@@ -114,62 +112,14 @@ export default function SessionReviewPage() {
       setIsDataLoading(false);
       return;
     }
-
-    try {
-      // 작업 요약 형식 지정
-      const taskSummaries = session.tasks
-        .map((task) => {
-          const startTime = formatTime(task.startTime);
-          const endTime = task.endTime
-            ? formatTime(task.endTime)
-            : "완료되지 않음";
-
-          let duration = "알 수 없음";
-          if (task.endTime) {
-            const durationMs =
-              task.endTime.getTime() - task.startTime.getTime();
-            const hours = Math.floor(durationMs / (1000 * 60 * 60));
-            const minutes = Math.floor(
-              (durationMs % (1000 * 60 * 60)) / (1000 * 60)
-            );
-            duration = `${hours}시간 ${minutes}분`;
-          }
-
-          return `- 작업: ${task.content}\n  시작: ${startTime}, 종료: ${endTime}, 소요시간: ${duration}`;
-        })
-        .join("\n");
-
-      const sessionDate = formatDateTime(session.startTime);
-      const totalWorkTime = formatDuration(session.totalDuration);
-
-      const prompt = `
-다음은 사용자가 ${sessionDate}에 수행한 작업 목록입니다:
-
-${taskSummaries}
-
-총 작업 시간: ${totalWorkTime}
-
-이 작업 목록을 바탕으로 사용자의 작업 세션을 분석해주세요. 다음 내용을 포함해주세요:
-1. 이 세션에서 가장 많은 시간을 투자한 작업은 무엇인지
-2. 작업 패턴에서 발견할 수 있는 특징 (예: 집중 시간대, 작업 전환 빈도 등)
-3. 생산성을 높이기 위한 제안
-4. 다음 작업 세션을 위한 조언
-
-친근하고 격려하는 톤으로 작성해주세요. 한국어로 응답해주세요.
-`;
-
-      const { text } = await generateText({
-        model: openai("gpt-4o"),
-        prompt: prompt,
-      });
-
-      setSummary(text);
-    } catch (error) {
-      console.error("Error generating summary:", error);
-      setSummary("죄송합니다. 세션 리뷰를 생성하는 중 오류가 발생했습니다.");
-    } finally {
-      setIsDataLoading(false);
-    }
+    setIsDataLoading(true);
+    const response = await fetch("/api/generate-summary", {
+      method: "POST",
+      body: JSON.stringify(session),
+    });
+    const data = await response.json();
+    setSummary(data.summary);
+    setIsDataLoading(false);
   };
 
   const handleBackToHome = () => {
@@ -283,7 +233,7 @@ ${taskSummaries}
             </div>
           ) : (
             <div className="prose prose-sm max-w-none">
-              {summary.split("\n").map((paragraph, index) => (
+              {summary?.split("\n").map((paragraph, index) => (
                 <p key={index}>{paragraph}</p>
               ))}
             </div>
