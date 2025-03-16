@@ -1,118 +1,106 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState, useEffect } from "react"
-import { Clock, CheckCircle } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatDistanceToNow, format } from "date-fns"
-import { ko } from "date-fns/locale"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { createClient } from "@/utils/supabase/client"
-import { encryptData, decryptData } from "@/utils/encryption"
-
-interface Task {
-  id: string
-  content: string
-  startTime: Date
-  endTime?: Date
-}
+import { useState, useEffect } from "react";
+import { Clock, CheckCircle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { createClient } from "@/utils/supabase/client";
+import { encryptData } from "@/utils/encryption";
+import type { Task } from "@/types/work-session";
+import {
+  formatTime,
+  formatDuration,
+  formatRelativeTime,
+} from "@/utils/date-utils";
+import {
+  createWorkSession,
+  getCurrentWorkSession,
+  endWorkSession,
+} from "@/services/work-session-service";
 
 export default function TrackerPage() {
-  const router = useRouter()
-  const { user, isLoading, signOut } = useAuth()
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [currentTask, setCurrentTask] = useState<Task | null>(null)
-  const [newTaskContent, setNewTaskContent] = useState("")
-  const [currentTime, setCurrentTime] = useState(new Date())
-  const [isDataLoading, setIsDataLoading] = useState(true)
-  const supabase = createClient()
+  const router = useRouter();
+  const { user, isLoading, signOut } = useAuth();
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [currentTask, setCurrentTask] = useState<Task | null>(null);
+  const [newTaskContent, setNewTaskContent] = useState("");
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const supabase = createClient();
 
   // 사용자가 로그인하지 않은 경우 로그인 페이지로 리디렉션
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push("/login")
+      router.push("/login");
     }
-  }, [user, isLoading, router])
+  }, [user, isLoading, router]);
 
-  // Supabase에서 작업 데이터 로드
+  // 현재 작업 세션 로드 또는 새 세션 생성
   useEffect(() => {
-    const fetchTasks = async () => {
-      if (!user) return
+    const initializeSession = async () => {
+      if (!user) return;
 
-      setIsDataLoading(true)
+      setIsDataLoading(true);
 
       try {
-        // 완료된 작업 가져오기
-        const { data: completedTasks, error: completedError } = await supabase
-          .from("tasks")
-          .select("*")
-          .eq("user_id", user.id)
-          .not("end_time", "is", null)
-          .order("start_time", { ascending: false })
+        // 현재 진행 중인 세션이 있는지 확인
+        const currentSession = await getCurrentWorkSession(user.id);
 
-        if (completedError) throw completedError
+        if (currentSession) {
+          // 기존 세션이 있는 경우
+          setSessionId(currentSession.id);
+          setSessionStartTime(currentSession.startTime);
+          setTasks(currentSession.tasks.filter((task) => task.endTime)); // 완료된 작업만
 
-        // 진행 중인 작업 가져오기
-        const { data: currentTaskData, error: currentError } = await supabase
-          .from("tasks")
-          .select("*")
-          .eq("user_id", user.id)
-          .is("end_time", null)
-          .order("start_time", { ascending: false })
-          .limit(1)
-          .single()
-
-        // 데이터 변환 및 복호화
-        const formattedTasks = completedTasks.map((task) => ({
-          id: task.id,
-          content: decryptData(task.content, user.id),
-          startTime: new Date(task.start_time),
-          endTime: task.end_time ? new Date(task.end_time) : undefined,
-        }))
-
-        setTasks(formattedTasks)
-
-        if (currentTaskData && !currentError) {
-          setCurrentTask({
-            id: currentTaskData.id,
-            content: decryptData(currentTaskData.content, user.id),
-            startTime: new Date(currentTaskData.start_time),
-            endTime: currentTaskData.end_time ? new Date(currentTaskData.end_time) : undefined,
-          })
+          // 진행 중인 작업이 있는지 확인
+          const ongoingTask = currentSession.tasks.find(
+            (task) => !task.endTime
+          );
+          if (ongoingTask) {
+            setCurrentTask(ongoingTask);
+          }
         } else {
-          setCurrentTask(null)
+          // 새 세션 생성
+          const newSessionId = await createWorkSession(user.id);
+          if (newSessionId) {
+            setSessionId(newSessionId);
+            setSessionStartTime(new Date());
+          }
         }
       } catch (error) {
-        console.error("Error fetching tasks:", error)
+        console.error("Error initializing session:", error);
       } finally {
-        setIsDataLoading(false)
+        setIsDataLoading(false);
       }
-    }
+    };
 
     if (user) {
-      fetchTasks()
+      initializeSession();
     }
-  }, [user, supabase])
+  }, [user]);
 
   // 현재 시간 업데이트
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
+      setCurrentTime(new Date());
+    }, 1000);
 
-    return () => clearInterval(timer)
-  }, [])
+    return () => clearInterval(timer);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
 
-    if (!user || !newTaskContent.trim()) return
+    if (!user || !sessionId || !newTaskContent.trim()) return;
 
-    const now = new Date()
+    const now = new Date();
 
     try {
       // 현재 작업이 있으면 완료 처리
@@ -120,16 +108,16 @@ export default function TrackerPage() {
         const { error: updateError } = await supabase
           .from("tasks")
           .update({ end_time: now.toISOString() })
-          .eq("id", currentTask.id)
+          .eq("id", currentTask.id);
 
-        if (updateError) throw updateError
+        if (updateError) throw updateError;
 
-        const completedTask = { ...currentTask, endTime: now }
-        setTasks((prevTasks) => [completedTask, ...prevTasks])
+        const completedTask = { ...currentTask, endTime: now };
+        setTasks((prevTasks) => [completedTask, ...prevTasks]);
       }
 
       // 새 작업 생성
-      const encryptedContent = encryptData(newTaskContent, user.id)
+      const encryptedContent = encryptData(newTaskContent, user.id);
 
       const { data: newTaskData, error: insertError } = await supabase
         .from("tasks")
@@ -137,29 +125,31 @@ export default function TrackerPage() {
           user_id: user.id,
           content: encryptedContent,
           start_time: now.toISOString(),
+          session_id: sessionId,
         })
         .select()
-        .single()
+        .single();
 
-      if (insertError) throw insertError
+      if (insertError) throw insertError;
 
       const newTask: Task = {
         id: newTaskData.id,
         content: newTaskContent,
         startTime: now,
-      }
+        sessionId: sessionId,
+      };
 
-      setCurrentTask(newTask)
-      setNewTaskContent("")
+      setCurrentTask(newTask);
+      setNewTaskContent("");
     } catch (error) {
-      console.error("Error saving task:", error)
+      console.error("Error saving task:", error);
     }
-  }
+  };
 
   const handleEndWork = async () => {
-    if (!user) return
+    if (!user || !sessionId) return;
 
-    const now = new Date()
+    const now = new Date();
 
     try {
       // 현재 작업이 있으면 완료 처리
@@ -167,38 +157,27 @@ export default function TrackerPage() {
         const { error: updateError } = await supabase
           .from("tasks")
           .update({ end_time: now.toISOString() })
-          .eq("id", currentTask.id)
+          .eq("id", currentTask.id);
 
-        if (updateError) throw updateError
-
-        const completedTask = { ...currentTask, endTime: now }
-        setTasks((prevTasks) => [completedTask, ...prevTasks])
-        setCurrentTask(null)
+        if (updateError) throw updateError;
       }
 
+      // 세션 종료
+      await endWorkSession(sessionId);
+
       // 리뷰 페이지로 이동
-      router.push("/review")
+      router.push(`/review/${sessionId}`);
     } catch (error) {
-      console.error("Error ending work:", error)
+      console.error("Error ending work:", error);
     }
-  }
-
-  const formatElapsedTime = (startTime: Date, endTime: Date = currentTime) => {
-    const elapsedMs = endTime.getTime() - startTime.getTime()
-
-    const hours = Math.floor(elapsedMs / (1000 * 60 * 60))
-    const minutes = Math.floor((elapsedMs % (1000 * 60 * 60)) / (1000 * 60))
-    const seconds = Math.floor((elapsedMs % (1000 * 60)) / 1000)
-
-    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
-  }
+  };
 
   if (isLoading || isDataLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p>로딩 중...</p>
       </div>
-    )
+    );
   }
 
   return (
@@ -209,6 +188,29 @@ export default function TrackerPage() {
           로그아웃
         </Button>
       </div>
+
+      {sessionStartTime && (
+        <Card className="mb-6">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-sm text-muted-foreground">출근 시간</p>
+                <p className="text-lg font-medium">
+                  {formatTime(sessionStartTime)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">경과 시간</p>
+                <p className="text-lg font-mono font-medium text-primary">
+                  {formatDuration(
+                    currentTime.getTime() - sessionStartTime.getTime()
+                  )}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <form onSubmit={handleSubmit} className="mb-8">
         <div className="flex gap-2">
@@ -236,11 +238,13 @@ export default function TrackerPage() {
               <div>
                 <p className="text-xl font-medium">{currentTask.content}</p>
                 <p className="text-sm text-muted-foreground">
-                  시작: {format(currentTask.startTime, "HH:mm:ss", { locale: ko })}
+                  시작: {formatTime(currentTask.startTime)}
                 </p>
               </div>
               <div className="text-2xl font-mono font-bold text-primary">
-                {formatElapsedTime(currentTask.startTime)}
+                {formatDuration(
+                  currentTime.getTime() - currentTask.startTime.getTime()
+                )}
               </div>
             </div>
           </CardContent>
@@ -254,7 +258,9 @@ export default function TrackerPage() {
         </h2>
 
         {tasks.length === 0 && !currentTask ? (
-          <p className="text-center text-muted-foreground py-8">아직 기록된 작업이 없습니다. 첫 작업을 입력해보세요!</p>
+          <p className="text-center text-muted-foreground py-8">
+            아직 기록된 작업이 없습니다. 첫 작업을 입력해보세요!
+          </p>
         ) : (
           <div className="space-y-4">
             {tasks.map((task) => (
@@ -264,13 +270,16 @@ export default function TrackerPage() {
                     <div>
                       <p className="font-medium">{task.content}</p>
                       <p className="text-sm text-muted-foreground">
-                        {format(task.startTime, "HH:mm:ss", { locale: ko })} -
-                        {task.endTime && format(task.endTime, " HH:mm:ss", { locale: ko })}
-                        {task.endTime && ` (${formatElapsedTime(task.startTime, task.endTime)})`}
+                        {formatTime(task.startTime)} -
+                        {task.endTime && formatTime(task.endTime)}
+                        {task.endTime &&
+                          ` (${formatDuration(
+                            task.endTime.getTime() - task.startTime.getTime()
+                          )})`}
                       </p>
                     </div>
                     <div className="text-sm">
-                      {formatDistanceToNow(task.startTime, { addSuffix: true, locale: ko })}
+                      {formatRelativeTime(task.startTime)}
                     </div>
                   </div>
                 </CardContent>
@@ -282,11 +291,15 @@ export default function TrackerPage() {
 
       {/* Fixed End Work button */}
       <div className="fixed bottom-6 right-6">
-        <Button onClick={handleEndWork} size="lg" variant="destructive" className="rounded-full shadow-lg">
+        <Button
+          onClick={handleEndWork}
+          size="lg"
+          variant="destructive"
+          className="rounded-full shadow-lg"
+        >
           퇴근하기
         </Button>
       </div>
     </main>
-  )
+  );
 }
-

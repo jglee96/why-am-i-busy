@@ -1,0 +1,301 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/auth-context";
+import { createClient } from "@/utils/supabase/client";
+import { decryptData } from "@/utils/encryption";
+import type { WorkSession, Task } from "@/types/work-session";
+import { formatDateTime, formatTime, formatDuration } from "@/utils/date-utils";
+import { ArrowLeft, Loader2, CheckCircle } from "lucide-react";
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+export default function SessionReviewPage() {
+  const router = useRouter();
+  const params = useParams();
+  const sessionId = params.id as string;
+  const { user, isLoading } = useAuth();
+  const [session, setSession] = useState<WorkSession | null>(null);
+  const [summary, setSummary] = useState<string>("");
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const supabase = createClient();
+
+  // 사용자가 로그인하지 않은 경우 로그인 페이지로 리디렉션
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.push("/login");
+    }
+  }, [user, isLoading, router]);
+
+  // 세션 데이터 로드
+  useEffect(() => {
+    const fetchSessionData = async () => {
+      if (!user || !sessionId) return;
+
+      setIsDataLoading(true);
+
+      try {
+        // 세션 정보 가져오기
+        const { data: sessionData, error: sessionError } = await supabase
+          .from("work_sessions")
+          .select("*")
+          .eq("id", sessionId)
+          .single();
+
+        if (sessionError) throw sessionError;
+
+        // 세션에 대한 작업 가져오기
+        const { data: tasksData, error: tasksError } = await supabase
+          .from("tasks")
+          .select("*")
+          .eq("session_id", sessionId)
+          .order("start_time", { ascending: true });
+
+        if (tasksError) throw tasksError;
+
+        // 작업 내용 복호화
+        const decryptedTasks: Task[] = tasksData.map((task) => ({
+          id: task.id,
+          content: decryptData(task.content, user.id),
+          startTime: new Date(task.start_time),
+          endTime: task.end_time ? new Date(task.end_time) : undefined,
+          sessionId: task.session_id,
+        }));
+
+        // 총 작업 시간 계산
+        let totalDuration = 0;
+        if (sessionData.end_time) {
+          totalDuration =
+            new Date(sessionData.end_time).getTime() -
+            new Date(sessionData.start_time).getTime();
+        } else if (decryptedTasks.length > 0) {
+          const lastTask = decryptedTasks[decryptedTasks.length - 1];
+          const endTime = lastTask.endTime || new Date();
+          totalDuration =
+            endTime.getTime() - new Date(sessionData.start_time).getTime();
+        }
+
+        const workSession: WorkSession = {
+          id: sessionData.id,
+          startTime: new Date(sessionData.start_time),
+          endTime: sessionData.end_time
+            ? new Date(sessionData.end_time)
+            : undefined,
+          tasks: decryptedTasks,
+          totalDuration,
+        };
+
+        setSession(workSession);
+
+        // 작업 요약 생성
+        if (decryptedTasks.length > 0) {
+          generateSessionSummary(workSession);
+        } else {
+          setSummary("이 세션에 기록된 작업이 없습니다.");
+          setIsDataLoading(false);
+        }
+      } catch (error) {
+        console.error("Error fetching session data:", error);
+        setIsDataLoading(false);
+      }
+    };
+
+    if (user && sessionId) {
+      fetchSessionData();
+    }
+  }, [user, sessionId, supabase]);
+
+  const generateSessionSummary = async (session: WorkSession) => {
+    if (session.tasks.length === 0) {
+      setSummary("이 세션에 기록된 작업이 없습니다.");
+      setIsDataLoading(false);
+      return;
+    }
+
+    try {
+      // 작업 요약 형식 지정
+      const taskSummaries = session.tasks
+        .map((task) => {
+          const startTime = formatTime(task.startTime);
+          const endTime = task.endTime
+            ? formatTime(task.endTime)
+            : "완료되지 않음";
+
+          let duration = "알 수 없음";
+          if (task.endTime) {
+            const durationMs =
+              task.endTime.getTime() - task.startTime.getTime();
+            const hours = Math.floor(durationMs / (1000 * 60 * 60));
+            const minutes = Math.floor(
+              (durationMs % (1000 * 60 * 60)) / (1000 * 60)
+            );
+            duration = `${hours}시간 ${minutes}분`;
+          }
+
+          return `- 작업: ${task.content}\n  시작: ${startTime}, 종료: ${endTime}, 소요시간: ${duration}`;
+        })
+        .join("\n");
+
+      const sessionDate = formatDateTime(session.startTime);
+      const totalWorkTime = formatDuration(session.totalDuration);
+
+      const prompt = `
+다음은 사용자가 ${sessionDate}에 수행한 작업 목록입니다:
+
+${taskSummaries}
+
+총 작업 시간: ${totalWorkTime}
+
+이 작업 목록을 바탕으로 사용자의 작업 세션을 분석해주세요. 다음 내용을 포함해주세요:
+1. 이 세션에서 가장 많은 시간을 투자한 작업은 무엇인지
+2. 작업 패턴에서 발견할 수 있는 특징 (예: 집중 시간대, 작업 전환 빈도 등)
+3. 생산성을 높이기 위한 제안
+4. 다음 작업 세션을 위한 조언
+
+친근하고 격려하는 톤으로 작성해주세요. 한국어로 응답해주세요.
+`;
+
+      const { text } = await generateText({
+        model: openai("gpt-4o"),
+        prompt: prompt,
+      });
+
+      setSummary(text);
+    } catch (error) {
+      console.error("Error generating summary:", error);
+      setSummary("죄송합니다. 세션 리뷰를 생성하는 중 오류가 발생했습니다.");
+    } finally {
+      setIsDataLoading(false);
+    }
+  };
+
+  const handleBackToHome = () => {
+    router.push("/");
+  };
+
+  if (isLoading || isDataLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p>로딩 중...</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p>세션을 찾을 수 없습니다.</p>
+      </div>
+    );
+  }
+
+  return (
+    <main className="container mx-auto p-4 max-w-3xl">
+      <div className="flex items-center mb-8 mt-8">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleBackToHome}
+          className="mr-2"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <h1 className="text-3xl font-bold">작업 세션 리뷰</h1>
+      </div>
+
+      <Card className="mb-8">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">세션 정보</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">시작 시간</p>
+              <p className="font-medium">{formatDateTime(session.startTime)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">종료 시간</p>
+              <p className="font-medium">
+                {session.endTime ? formatDateTime(session.endTime) : "진행 중"}
+              </p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-sm text-muted-foreground">총 작업 시간</p>
+              <p className="text-xl font-mono font-bold text-primary">
+                {formatDuration(session.totalDuration)}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-8">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <CheckCircle className="h-5 w-5" />
+            작업 목록
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {session.tasks.length === 0 ? (
+            <p className="text-center text-muted-foreground py-4">
+              이 세션에 기록된 작업이 없습니다.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {session.tasks.map((task) => (
+                <div key={task.id} className="border-b pb-3 last:border-0">
+                  <p className="font-medium">{task.content}</p>
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>
+                      {formatTime(task.startTime)} ~
+                      {task.endTime ? formatTime(task.endTime) : "진행 중"}
+                    </span>
+                    {task.endTime && (
+                      <span>
+                        {formatDuration(
+                          task.endTime.getTime() - task.startTime.getTime()
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">AI 세션 리뷰</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isDataLoading ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+              <p className="text-muted-foreground">
+                세션 리뷰를 생성하고 있습니다...
+              </p>
+            </div>
+          ) : (
+            <div className="prose prose-sm max-w-none">
+              {summary.split("\n").map((paragraph, index) => (
+                <p key={index}>{paragraph}</p>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="mt-8 text-center">
+        <Button onClick={handleBackToHome} size="lg">
+          홈으로 돌아가기
+        </Button>
+      </div>
+    </main>
+  );
+}
