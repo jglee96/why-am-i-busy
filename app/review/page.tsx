@@ -6,10 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
-import { Clock, ArrowLeft, Loader2 } from "lucide-react";
+import {
+  Clock,
+  ArrowLeft,
+  Loader2,
+  Share,
+  BrainCircuitIcon,
+} from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/utils/supabase/client";
 import { decryptData } from "@/utils/encryption";
+import { formatDuration } from "@/utils/date-utils";
 
 interface Task {
   id: string;
@@ -23,7 +30,7 @@ export default function ReviewPage() {
   const { user, isLoading } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [summary, setSummary] = useState<string>("");
-  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(false);
   const supabase = createClient();
 
   // 사용자가 로그인하지 않은 경우 로그인 페이지로 리디렉션
@@ -34,69 +41,63 @@ export default function ReviewPage() {
   }, [user, isLoading, router]);
 
   // Supabase에서 오늘의 작업 데이터 로드
-  useEffect(() => {
-    const fetchTodayTasks = async () => {
-      if (!user) return;
+  const fetchTodayTasks = async () => {
+    if (!user) return;
 
-      setIsDataLoading(true);
+    setIsDataLoading(true);
 
-      try {
-        // 오늘 날짜의 시작과 끝 계산
-        const today = new Date();
-        const startOfDay = new Date(
-          today.getFullYear(),
-          today.getMonth(),
-          today.getDate()
-        ).toISOString();
-        const endOfDay = new Date(
-          today.getFullYear(),
-          today.getMonth(),
-          today.getDate(),
-          23,
-          59,
-          59,
-          999
-        ).toISOString();
+    try {
+      // 오늘 날짜의 시작과 끝 계산
+      const today = new Date();
+      const startOfDay = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate()
+      ).toISOString();
+      const endOfDay = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+        23,
+        59,
+        59,
+        999
+      ).toISOString();
 
-        // 오늘의 완료된 작업 가져오기
-        const { data: todayTasks, error } = await supabase
-          .from("tasks")
-          .select("*")
-          .eq("user_id", user.id)
-          .gte("start_time", startOfDay)
-          .lte("start_time", endOfDay)
-          .not("end_time", "is", null)
-          .order("start_time", { ascending: true });
+      // 오늘의 완료된 작업 가져오기
+      const { data: todayTasks, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("user_id", user.id)
+        .gte("start_time", startOfDay)
+        .lte("start_time", endOfDay)
+        .not("end_time", "is", null)
+        .order("start_time", { ascending: true });
 
-        if (error) throw error;
+      if (error) throw error;
 
-        // 데이터 변환 및 복호화
-        const formattedTasks = todayTasks.map((task) => ({
-          id: task.id,
-          content: decryptData(task.content, user.id),
-          startTime: new Date(task.start_time),
-          endTime: task.end_time ? new Date(task.end_time) : undefined,
-        }));
+      // 데이터 변환 및 복호화
+      const formattedTasks = todayTasks.map((task) => ({
+        id: task.id,
+        content: decryptData(task.content, user.id),
+        startTime: new Date(task.start_time),
+        endTime: task.end_time ? new Date(task.end_time) : undefined,
+      }));
 
-        setTasks(formattedTasks);
+      setTasks(formattedTasks);
 
-        // 작업 요약 생성
-        if (formattedTasks.length > 0) {
-          generateSummary(formattedTasks);
-        } else {
-          setSummary("오늘 기록된 작업이 없습니다.");
-          setIsDataLoading(false);
-        }
-      } catch (error) {
-        console.error("Error fetching today's tasks:", error);
+      // 작업 요약 생성
+      if (formattedTasks.length > 0) {
+        generateSummary(formattedTasks);
+      } else {
+        setSummary("오늘 기록된 작업이 없습니다.");
         setIsDataLoading(false);
       }
-    };
-
-    if (user) {
-      fetchTodayTasks();
+    } catch (error) {
+      console.error("Error fetching today's tasks:", error);
+      setIsDataLoading(false);
     }
-  }, [user, supabase]);
+  };
 
   const generateSummary = async (tasks: Task[]) => {
     if (tasks.length === 0) {
@@ -113,18 +114,6 @@ export default function ReviewPage() {
     const data = await response.json();
     setSummary(data.summary);
     setIsDataLoading(false);
-  };
-
-  const formatElapsedTime = (startTime: Date, endTime: Date) => {
-    const elapsedMs = endTime.getTime() - startTime.getTime();
-
-    const hours = Math.floor(elapsedMs / (1000 * 60 * 60));
-    const minutes = Math.floor((elapsedMs % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((elapsedMs % (1000 * 60)) / 1000);
-
-    return `${hours.toString().padStart(2, "0")}:${minutes
-      .toString()
-      .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
   };
 
   const getTotalWorkTime = () => {
@@ -151,7 +140,7 @@ export default function ReviewPage() {
     router.push("/");
   };
 
-  if (isLoading || isDataLoading) {
+  if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p>로딩 중...</p>
@@ -213,9 +202,9 @@ export default function ReviewPage() {
                     </span>
                     {task.endTime && (
                       <span>
-                        {formatElapsedTime(
-                          new Date(task.startTime),
-                          new Date(task.endTime)
+                        {formatDuration(
+                          new Date(task.endTime).getTime() -
+                            new Date(task.startTime).getTime()
                         )}
                       </span>
                     )}
@@ -229,7 +218,12 @@ export default function ReviewPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg">AI 하루 리뷰</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            AI 하루 리뷰
+            <Button variant="outline" size="icon" onClick={fetchTodayTasks}>
+              <BrainCircuitIcon />
+            </Button>
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {isDataLoading ? (
