@@ -18,10 +18,10 @@ import {
   formatRelativeTime,
 } from "@/utils/date-utils";
 import {
-  createWorkSession,
-  getCurrentWorkSession,
-  endWorkSession,
-} from "@/services/work-session-service";
+  useCreateWorkSession,
+  useEndWorkSession,
+  useGetCurrentWorkSession,
+} from "@/services/work-session.service";
 
 export default function TrackerPage() {
   const router = useRouter();
@@ -34,7 +34,10 @@ export default function TrackerPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const supabase = createClient();
-
+  const { data: currentWorkSession, isLoading: isCurrentWorkSessionLoading } =
+    useGetCurrentWorkSession();
+  const { trigger: createWorkSession } = useCreateWorkSession();
+  const { trigger: endWorkSession } = useEndWorkSession();
   // 사용자가 로그인하지 않은 경우 로그인 페이지로 리디렉션
   useEffect(() => {
     if (!isLoading && !user) {
@@ -50,17 +53,14 @@ export default function TrackerPage() {
       setIsDataLoading(true);
 
       try {
-        // 현재 진행 중인 세션이 있는지 확인
-        const currentSession = await getCurrentWorkSession(user.id);
-
-        if (currentSession) {
+        if (currentWorkSession) {
           // 기존 세션이 있는 경우
-          setSessionId(currentSession.id);
-          setSessionStartTime(currentSession.startTime);
-          setTasks(currentSession.tasks.filter((task) => task.endTime)); // 완료된 작업만
+          setSessionId(currentWorkSession.id);
+          setSessionStartTime(currentWorkSession.startTime);
+          setTasks(currentWorkSession?.tasks.filter((task) => task.endTime)); // 완료된 작업만
 
           // 진행 중인 작업이 있는지 확인
-          const ongoingTask = currentSession.tasks.find(
+          const ongoingTask = currentWorkSession.tasks.find(
             (task) => !task.endTime
           );
           if (ongoingTask) {
@@ -68,7 +68,7 @@ export default function TrackerPage() {
           }
         } else {
           // 새 세션 생성
-          const newSessionId = await createWorkSession(user.id);
+          const newSessionId = await createWorkSession();
           if (newSessionId) {
             setSessionId(newSessionId);
             setSessionStartTime(new Date());
@@ -163,7 +163,7 @@ export default function TrackerPage() {
       }
 
       // 세션 종료
-      await endWorkSession(sessionId);
+      await endWorkSession({ id: sessionId });
 
       // 리뷰 페이지로 이동
       router.push(`/review/${sessionId}`);

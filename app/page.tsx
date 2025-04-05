@@ -1,11 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import { getWorkSessions } from "@/services/work-session-service";
-import type { WorkSession } from "@/types/work-session";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Accordion,
@@ -15,34 +12,13 @@ import {
 } from "@/components/ui/accordion";
 import { formatTime, formatDuration, groupByDay } from "@/utils/date-utils";
 import { Clock, Calendar, ChevronRight } from "lucide-react";
+import { useGetWorkSessions } from "@/services/work-session.service";
 
 export default function Home() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
-  const [isSessionsLoading, setIsSessionsLoading] = useState(true);
-
-  useEffect(() => {
-    if (!isLoading && user) {
-      fetchWorkSessions();
-    } else if (!isLoading && !user) {
-      setIsSessionsLoading(false);
-    }
-  }, [user, isLoading]);
-
-  const fetchWorkSessions = async () => {
-    if (!user) return;
-
-    setIsSessionsLoading(true);
-    try {
-      const sessions = await getWorkSessions(user.id);
-      setWorkSessions(sessions);
-    } catch (error) {
-      console.error("Error fetching work sessions:", error);
-    } finally {
-      setIsSessionsLoading(false);
-    }
-  };
+  const { data: workSessions, isLoading: isSessionsLoading } =
+    useGetWorkSessions();
 
   const handleStartWork = () => {
     if (user) {

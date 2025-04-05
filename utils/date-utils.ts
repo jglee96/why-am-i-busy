@@ -32,11 +32,11 @@ export function isSameDay(date1: Date, date2: Date): boolean {
 }
 
 export function groupByDay<T extends { startTime: Date }>(
-  sessions: T[]
+  sessions?: T[]
 ): Record<string, T[]> {
   const grouped: Record<string, T[]> = {};
 
-  sessions.forEach((session) => {
+  sessions?.forEach((session) => {
     const dateKey = format(new Date(session.startTime), "yyyy-MM-dd");
     if (!grouped[dateKey]) {
       grouped[dateKey] = [];
