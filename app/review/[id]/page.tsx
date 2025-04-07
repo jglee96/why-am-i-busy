@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
 import { createClient } from "@/utils/supabase/client";
-import { decryptData } from "@/utils/encryption";
 import type { WorkSession, Task } from "@/types/work-session";
 import { formatDateTime, formatTime, formatDuration } from "@/utils/date-utils";
 import { ArrowLeft, Loader2, CheckCircle } from "lucide-react";
