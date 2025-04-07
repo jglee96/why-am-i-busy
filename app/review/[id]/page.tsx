@@ -10,16 +10,17 @@ import { decryptData } from "@/utils/encryption";
 import type { WorkSession, Task } from "@/types/work-session";
 import { formatDateTime, formatTime, formatDuration } from "@/utils/date-utils";
 import { ArrowLeft, Loader2, CheckCircle } from "lucide-react";
+import { useGetWorkSession } from "@/services/work-session.service";
 
 export default function SessionReviewPage() {
   const router = useRouter();
   const params = useParams();
   const sessionId = params.id as string;
   const { user, isLoading } = useAuth();
-  const [session, setSession] = useState<WorkSession | null>(null);
   const [summary, setSummary] = useState<string>("");
   const [isDataLoading, setIsDataLoading] = useState(true);
   const supabase = createClient();
+  const { data: session } = useGetWorkSession({ id: sessionId });
 
   // 사용자가 로그인하지 않은 경우 로그인 페이지로 리디렉션
   useEffect(() => {
@@ -36,61 +37,9 @@ export default function SessionReviewPage() {
       setIsDataLoading(true);
 
       try {
-        // 세션 정보 가져오기
-        const { data: sessionData, error: sessionError } = await supabase
-          .from("work_sessions")
-          .select("*")
-          .eq("id", sessionId)
-          .single();
-
-        if (sessionError) throw sessionError;
-
-        // 세션에 대한 작업 가져오기
-        const { data: tasksData, error: tasksError } = await supabase
-          .from("tasks")
-          .select("*")
-          .eq("session_id", sessionId)
-          .order("start_time", { ascending: true });
-
-        if (tasksError) throw tasksError;
-
-        // 작업 내용 복호화
-        const decryptedTasks: Task[] = tasksData.map((task) => ({
-          id: task.id,
-          content: decryptData(task.content, user.id),
-          startTime: new Date(task.start_time),
-          endTime: task.end_time ? new Date(task.end_time) : undefined,
-          sessionId: task.session_id,
-        }));
-
-        // 총 작업 시간 계산
-        let totalDuration = 0;
-        if (sessionData.end_time) {
-          totalDuration =
-            new Date(sessionData.end_time).getTime() -
-            new Date(sessionData.start_time).getTime();
-        } else if (decryptedTasks.length > 0) {
-          const lastTask = decryptedTasks[decryptedTasks.length - 1];
-          const endTime = lastTask.endTime || new Date();
-          totalDuration =
-            endTime.getTime() - new Date(sessionData.start_time).getTime();
-        }
-
-        const workSession: WorkSession = {
-          id: sessionData.id,
-          startTime: new Date(sessionData.start_time),
-          endTime: sessionData.end_time
-            ? new Date(sessionData.end_time)
-            : undefined,
-          tasks: decryptedTasks,
-          totalDuration,
-        };
-
-        setSession(workSession);
-
         // 작업 요약 생성
-        if (decryptedTasks.length > 0) {
-          generateSessionSummary(workSession);
+        if (!session?.tasks) {
+          generateSessionSummary(session);
         } else {
           setSummary("이 세션에 기록된 작업이 없습니다.");
           setIsDataLoading(false);

@@ -15,12 +15,12 @@ export const useCreateWorkSession = () =>
   useSWRMutation("/api/work-sessions", createWorkSession);
 
 // 작업 세션 종료
-interface EndWokrSessionArgType {
+interface WokrSessionArgType {
   id: string;
 }
 const endWorkSession = async (
   url: string,
-  { arg }: { arg: EndWokrSessionArgType }
+  { arg }: { arg: WokrSessionArgType }
 ) => {
   const response = await fetch(url, {
     method: "PATCH",
@@ -39,6 +39,18 @@ const getWorkSessions = async (url: string): Promise<WorkSession[]> => {
 };
 export const useGetWorkSessions = () =>
   useSWR("/api/work-sessions", getWorkSessions);
+
+// 작업 세션 상세 조회
+const getWorkSession = async (key: string[]): Promise<WorkSession> => {
+  const [url, id] = key;
+  const response = await fetch(url, {
+    method: "GET",
+    body: JSON.stringify({ id }),
+  });
+  return response.json();
+};
+export const useGetWorkSession = ({ id }: { id: string }) =>
+  useSWR(["/api/work-sessions", id], getWorkSession);
 
 // 현재 작업 세션 조회
 const getCurrentWorkSession = async (url: string): Promise<WorkSession> => {
