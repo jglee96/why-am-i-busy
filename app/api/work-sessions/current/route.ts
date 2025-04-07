@@ -1,22 +1,13 @@
 import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
 import { decryptData } from "@/utils/encryption"; // 암호화 유틸 import 가정
+import { getAuthUser, getSessionTasksData } from "@/services/server/utils";
 
 export async function GET(request: Request) {
   const supabase = createClient();
 
   try {
-    // 현재 로그인된 유저 정보 가져오기
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "인증되지 않은 사용자입니다." },
-        { status: 401 }
-      );
-    }
+    const user = await getAuthUser(supabase);
 
     // 완료되지 않은 작업 세션 가져오기
     const { data: session, error } = await supabase
@@ -36,14 +27,7 @@ export async function GET(request: Request) {
       throw error;
     }
 
-    // 세션에 대한 작업 가져오기
-    const { data: tasks, error: tasksError } = await supabase
-      .from("tasks")
-      .select("*")
-      .eq("session_id", session.id)
-      .order("start_time", { ascending: true });
-
-    if (tasksError) throw tasksError;
+    const tasks = await getSessionTasksData(supabase, session.id, user.id);
 
     // 작업 내용 복호화
     const decryptedTasks = tasks.map((task) => ({
@@ -68,6 +52,10 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ workSession });
   } catch (error) {
+    if (error instanceof NextResponse) {
+      return error;
+    }
+
     console.error("Error fetching current work session:", error);
     return NextResponse.json(
       { error: "현재 작업 세션 조회 중 오류가 발생했습니다." },

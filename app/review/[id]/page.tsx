@@ -5,76 +5,37 @@ import { useRouter, useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
-import { createClient } from "@/utils/supabase/client";
-import type { WorkSession, Task } from "@/types/work-session";
 import { formatDateTime, formatTime, formatDuration } from "@/utils/date-utils";
 import { ArrowLeft, Loader2, CheckCircle } from "lucide-react";
-import { useGetWorkSession } from "@/services/work-session.service";
+import {
+  useGenerateSessionSummary,
+  useGetWorkSession,
+} from "@/services/server/work-session.service";
 
 export default function SessionReviewPage() {
   const router = useRouter();
   const params = useParams();
   const sessionId = params.id as string;
-  const { user, isLoading } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [summary, setSummary] = useState<string>("");
-  const [isDataLoading, setIsDataLoading] = useState(true);
-  const supabase = createClient();
-  const { data: session } = useGetWorkSession({ id: sessionId });
+  const { data: session, isLoading: isSessionLoading } = useGetWorkSession({
+    id: sessionId,
+  });
+  const { trigger: generateSessionSummary, isMutating } =
+    useGenerateSessionSummary();
 
   // 사용자가 로그인하지 않은 경우 로그인 페이지로 리디렉션
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (!isAuthLoading && !user) {
       router.push("/login");
     }
-  }, [user, isLoading, router]);
-
-  // 세션 데이터 로드
-  useEffect(() => {
-    const fetchSessionData = async () => {
-      if (!user || !sessionId) return;
-
-      setIsDataLoading(true);
-
-      try {
-        // 작업 요약 생성
-        if (!session?.tasks) {
-          generateSessionSummary(session);
-        } else {
-          setSummary("이 세션에 기록된 작업이 없습니다.");
-          setIsDataLoading(false);
-        }
-      } catch (error) {
-        console.error("Error fetching session data:", error);
-        setIsDataLoading(false);
-      }
-    };
-
-    if (user && sessionId) {
-      fetchSessionData();
-    }
-  }, [user, sessionId, supabase]);
-
-  const generateSessionSummary = async (session: WorkSession) => {
-    if (session.tasks.length === 0) {
-      setSummary("이 세션에 기록된 작업이 없습니다.");
-      setIsDataLoading(false);
-      return;
-    }
-    setIsDataLoading(true);
-    const response = await fetch("/api/generate-summary", {
-      method: "POST",
-      body: JSON.stringify(session),
-    });
-    const data = await response.json();
-    setSummary(data.summary);
-    setIsDataLoading(false);
-  };
+  }, [user, isAuthLoading]);
 
   const handleBackToHome = () => {
     router.push("/");
   };
 
-  if (isLoading || isDataLoading) {
+  if (isSessionLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p>로딩 중...</p>
@@ -172,7 +133,7 @@ export default function SessionReviewPage() {
           <CardTitle className="text-lg">AI 세션 리뷰</CardTitle>
         </CardHeader>
         <CardContent>
-          {isDataLoading ? (
+          {isMutating ? (
             <div className="flex flex-col items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
               <p className="text-muted-foreground">

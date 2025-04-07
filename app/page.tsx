@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/accordion";
 import { formatTime, formatDuration, groupByDay } from "@/utils/date-utils";
 import { Clock, Calendar, ChevronRight } from "lucide-react";
-import { useGetWorkSessions } from "@/services/work-session.service";
+import { useGetWorkSessions } from "@/services/server/work-session.service";
 
 export default function Home() {
   const router = useRouter();

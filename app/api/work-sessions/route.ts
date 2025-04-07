@@ -1,4 +1,8 @@
-import { decryptData } from "@/utils/encryption";
+import {
+  createWorkSessionFromDate,
+  getAuthUser,
+  getSessionTasksData,
+} from "@/services/server/utils";
 import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -6,17 +10,7 @@ export async function POST(request: Request) {
   const supabase = createClient();
 
   try {
-    // 현재 로그인된 유저 정보 가져오기
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "인증되지 않은 사용자입니다." },
-        { status: 401 }
-      );
-    }
+    const user = await getAuthUser(supabase);
 
     const now = new Date();
 
@@ -45,17 +39,7 @@ export async function GET(request: Request) {
   const supabase = createClient();
 
   try {
-    // 현재 로그인된 유저 정보 가져오기
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "인증되지 않은 사용자입니다." },
-        { status: 401 }
-      );
-    }
+    const user = await getAuthUser(supabase);
 
     // 작업 세션 가져오기
     const { data: sessions, error: sessionsError } = await supabase
@@ -69,43 +53,15 @@ export async function GET(request: Request) {
     // 각 세션에 대한 작업 가져오기
     const workSessions = await Promise.all(
       sessions.map(async (session) => {
-        const { data: tasks, error: tasksError } = await supabase
-          .from("tasks")
-          .select("*")
-          .eq("session_id", session.id)
-          .order("start_time", { ascending: true });
+        const tasks = await getSessionTasksData(supabase, session.id, user.id);
 
-        if (tasksError) throw tasksError;
+        const workSession = await createWorkSessionFromDate(
+          session,
+          tasks,
+          user.id
+        );
 
-        // 작업 내용 복호화
-        const decryptedTasks = tasks.map((task) => ({
-          id: task.id,
-          content: decryptData(task.content, user.id),
-          startTime: new Date(task.start_time),
-          endTime: task.end_time ? new Date(task.end_time) : undefined,
-          sessionId: task.session_id,
-        }));
-
-        // 총 작업 시간 계산
-        let totalDuration = 0;
-        if (session.end_time) {
-          totalDuration =
-            new Date(session.end_time).getTime() -
-            new Date(session.start_time).getTime();
-        } else if (decryptedTasks.length > 0) {
-          const lastTask = decryptedTasks[decryptedTasks.length - 1];
-          const endTime = lastTask.endTime || new Date();
-          totalDuration =
-            endTime.getTime() - new Date(session.start_time).getTime();
-        }
-
-        return {
-          id: session.id,
-          startTime: new Date(session.start_time),
-          endTime: session.end_time ? new Date(session.end_time) : undefined,
-          tasks: decryptedTasks,
-          totalDuration,
-        };
+        return workSession;
       })
     );
 

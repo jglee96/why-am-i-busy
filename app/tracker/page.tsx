@@ -21,7 +21,7 @@ import {
   useCreateWorkSession,
   useEndWorkSession,
   useGetCurrentWorkSession,
-} from "@/services/work-session.service";
+} from "@/services/server/work-session.service";
 
 export default function TrackerPage() {
   const router = useRouter();

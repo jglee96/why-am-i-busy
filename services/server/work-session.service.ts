@@ -59,3 +59,17 @@ const getCurrentWorkSession = async (url: string): Promise<WorkSession> => {
 };
 export const useGetCurrentWorkSession = () =>
   useSWR("/api/work-sessions/current", getCurrentWorkSession);
+
+// 작업 ai 요약
+const generateSessionSummary = async (
+  url: string,
+  { arg }: { arg: WokrSessionArgType }
+) => {
+  const response = await fetch(url, {
+    method: "POST",
+    body: JSON.stringify(arg),
+  });
+  return response.json();
+};
+export const useGenerateSessionSummary = () =>
+  useSWRMutation("/api/work-sessions/summary", generateSessionSummary);
