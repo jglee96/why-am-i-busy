@@ -33,7 +33,9 @@ export const useEndWorkSession = () =>
   useSWRMutation("/api/work-sessions/[id]", endWorkSession);
 
 // 작업 세션들 조회
-const getWorkSessions = async (url: string): Promise<WorkSession[]> => {
+const getWorkSessions = async (
+  url: string
+): Promise<{ workSessions: WorkSession[] }> => {
   const response = await fetch(url);
   return response.json();
 };

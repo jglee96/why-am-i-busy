@@ -1,12 +1,12 @@
 import { format, formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 
-export function formatDateTime(date: Date): string {
-  return format(date, "yyyy년 MM월 dd일 HH:mm", { locale: ko });
+export function formatDateTime(date: string): string {
+  return format(new Date(date), "yyyy년 MM월 dd일 HH:mm", { locale: ko });
 }
 
-export function formatTime(date: Date): string {
-  return format(date, "HH:mm:ss", { locale: ko });
+export function formatTime(date: string): string {
+  return format(new Date(date), "HH:mm:ss", { locale: ko });
 }
 
 export function formatRelativeTime(date: Date): string {
@@ -31,7 +31,7 @@ export function isSameDay(date1: Date, date2: Date): boolean {
   );
 }
 
-export function groupByDay<T extends { startTime: Date }>(
+export function groupByDay<T extends { startTime: string }>(
   sessions?: T[]
 ): Record<string, T[]> {
   const grouped: Record<string, T[]> = {};

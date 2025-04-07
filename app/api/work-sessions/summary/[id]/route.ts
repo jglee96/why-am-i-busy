@@ -28,8 +28,8 @@ export async function GET(
     const decryptedTasks: Task[] = tasksData.map((task) => ({
       id: task.id,
       content: decryptData(task.content, user.id),
-      startTime: new Date(task.start_time),
-      endTime: task.end_time ? new Date(task.end_time) : undefined,
+      startTime: task.start_time,
+      endTime: task.end_time,
       sessionId: task.session_id,
     }));
 

@@ -17,7 +17,7 @@ import { useGetWorkSessions } from "@/services/server/work-session.service";
 export default function Home() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  const { data: workSessions, isLoading: isSessionsLoading } =
+  const { data: { workSessions } = {}, isLoading: isSessionsLoading } =
     useGetWorkSessions();
 
   const handleStartWork = () => {
@@ -123,8 +123,8 @@ export default function Home() {
                                       {task.endTime && (
                                         <span className="text-xs text-muted-foreground">
                                           {formatDuration(
-                                            task.endTime.getTime() -
-                                              task.startTime.getTime()
+                                            new Date(task.endTime).getTime() -
+                                              new Date(task.startTime).getTime()
                                           )}
                                         </span>
                                       )}
